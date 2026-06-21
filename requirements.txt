@@ -4,3 +4,4 @@ slowapi
 pydantic-settings
 httpx
 tenacity
+websockets
