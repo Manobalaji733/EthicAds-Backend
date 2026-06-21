@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EthicAds | Telemetry Dashboard</title>
+    <style>
+        /* Refined, Subtle Color Theme (Zinc/Slate base) */
+        :root {
+            --bg-color: #18181b;       /* Soft near-black */
+            --surface-color: #27272a;  /* Subtle elevated gray */
+            --border-color: #3f3f46;   /* Soft border */
+            --text-main: #f4f4f5;      /* Off-white text */
+            --text-muted: #a1a1aa;     /* Soft gray text */
+            --accent-blue: #60a5fa;    /* Muted Blue */
+            --accent-green: #34d399;   /* Soft Green */
+            --accent-purple: #a78bfa;  /* Dusty Purple */
+            --shadow-subtle: 0 4px 20px rgba(0, 0, 0, 0.15);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            padding: 2.5rem;
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2.5rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            background: var(--surface-color);
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+        }
+
+        .dot {
+            height: 8px;
+            width: 8px;
+            background-color: #ef4444; 
+            border-radius: 50%;
+            display: inline-block;
+            transition: all 0.3s ease;
+        }
+
+        .dot.online {
+            background-color: var(--accent-green);
+            box-shadow: 0 0 10px var(--accent-green);
+        }
+
+        /* KPI Grid with Hover "Peek" Effect */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .kpi-card {
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1.75rem;
+            box-shadow: var(--shadow-subtle);
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 0.3s ease;
+        }
+
+        /* Peek-a-boo Lift on Hover */
+        .kpi-card:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+            border-color: #52525b;
+        }
+
+        .kpi-title {
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.75rem;
+            font-weight: 600;
+        }
+
+        .kpi-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        .kpi-value.blue { color: var(--accent-blue); }
+        .kpi-value.green { color: var(--accent-green); }
+        .kpi-value.purple { color: var(--accent-purple); }
+
+        /* Live Feed Section */
+        .feed-container {
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            height: 450px;
+            box-shadow: var(--shadow-subtle);
+            overflow: hidden;
+        }
+
+        .feed-header {
+            padding: 1.25rem 1.75rem;
+            background-color: rgba(39, 39, 42, 0.8);
+            backdrop-filter: blur(8px);
+            border-bottom: 1px solid var(--border-color);
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 10;
+        }
+
+        .feed-list {
+            list-style: none;
+            overflow-y: auto;
+            flex-grow: 1;
+            padding: 0;
+            scroll-behavior: smooth;
+        }
+
+        /* Peek-a-boo Animation for Feed Items */
+        .feed-item {
+            padding: 1.25rem 1.75rem;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            gap: 1.25rem;
+            align-items: center;
+            /* The Peek-a-boo animation */
+            animation: peekIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+            opacity: 0;
+            transform-origin: top;
+        }
+
+        .feed-item:last-child {
+            border-bottom: none;
+        }
+
+        .badge {
+            padding: 0.35rem 0.6rem;
+            border-radius: 6px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .badge.impression {
+            background-color: rgba(96, 165, 250, 0.1);
+            color: var(--accent-blue);
+            border: 1px solid rgba(96, 165, 250, 0.3);
+        }
+
+        .badge.click {
+            background-color: rgba(52, 211, 153, 0.1);
+            color: var(--accent-green);
+            border: 1px solid rgba(52, 211, 153, 0.3);
+        }
+
+        .event-time {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            min-width: 75px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .event-detail {
+            flex-grow: 1;
+            font-size: 0.95rem;
+            color: var(--text-main);
+        }
+
+        .event-detail strong {
+            font-weight: 600;
+            color: #ffffff;
+        }
+
+        /* The Peek-a-boo Keyframes */
+        @keyframes peekIn {
+            0% { 
+                opacity: 0; 
+                transform: translateY(-20px) scale(0.98); 
+            }
+            50% { 
+                transform: translateY(2px) scale(1.01); 
+            }
+            100% { 
+                opacity: 1; 
+                transform: translateY(0) scale(1); 
+            }
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--bg-color); 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color); 
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #52525b; 
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div>
+            <h1>EthicAds Telemetry</h1>
+            <p style="color: var(--text-muted); margin-top: 0.35rem; font-size: 0.95rem;">Privacy-First Advertising Engine</p>
+        </div>
+        <div class="status-indicator">
+            <span id="ws-dot" class="dot"></span>
+            <span id="ws-status">Connecting...</span>
+        </div>
+    </header>
+
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <div class="kpi-title">Total Impressions</div>
+            <div id="kpi-impressions" class="kpi-value blue">0</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-title">Total Clicks</div>
+            <div id="kpi-clicks" class="kpi-value green">0</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-title">Unique Users</div>
+            <div id="kpi-users" class="kpi-value purple">0</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-title">Avg. CTR</div>
+            <div id="kpi-ctr" class="kpi-value" style="color: var(--text-main);">0.00%</div>
+        </div>
+    </div>
+
+    <div class="feed-container">
+        <div class="feed-header">
+            <span>Live Activity Stream</span>
+            <span id="event-count" style="color: var(--text-muted); font-size: 0.85rem; font-weight: 500;">0 events this session</span>
+        </div>
+        <ul id="feed-list" class="feed-list">
+            </ul>
+    </div>
+
+    <script>
+        // Configuration
+        const API_BASE = window.location.origin;
+        const WS_PROTOCOL = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const WS_URL = `${WS_PROTOCOL}//${window.location.host}/ws/telemetry`;
+
+        // State Management
+        let state = {
+            impressions: 0,
+            clicks: 0,
+            users: 0,
+            sessionEvents: 0
+        };
+
+        // DOM Elements
+        const elImpressions = document.getElementById('kpi-impressions');
+        const elClicks = document.getElementById('kpi-clicks');
+        const elUsers = document.getElementById('kpi-users');
+        const elCtr = document.getElementById('kpi-ctr');
+        const elFeed = document.getElementById('feed-list');
+        const elEventCount = document.getElementById('event-count');
+        const wsDot = document.getElementById('ws-dot');
+        const wsStatus = document.getElementById('ws-status');
+
+        // ==========================================
+        // UI UPDATERS
+        // ==========================================
+        function updateKPIs() {
+            elImpressions.textContent = state.impressions.toLocaleString();
+            elClicks.textContent = state.clicks.toLocaleString();
+            elUsers.textContent = state.users.toLocaleString();
+            
+            const ctr = state.impressions > 0 
+                ? ((state.clicks / state.impressions) * 100).toFixed(2) 
+                : "0.00";
+            elCtr.textContent = `${ctr}%`;
+        }
+
+        function appendEvent(type, detailStr) {
+            state.sessionEvents++;
+            elEventCount.textContent = `${state.sessionEvents} events this session`;
+
+            const time = new Date().toLocaleTimeString([], { hour12: false });
+            const li = document.createElement('li');
+            li.className = 'feed-item';
+            
+            const badgeClass = type === 'IMPRESSION' ? 'impression' : 'click';
+            
+            li.innerHTML = `
+                <span class="event-time">${time}</span>
+                <span class="badge ${badgeClass}">${type}</span>
+                <span class="event-detail">${detailStr}</span>
+            `;
+
+            // Prepend to show newest at the top
+            elFeed.insertBefore(li, elFeed.firstChild);
+
+            // Keep list from growing infinitely (cap at 50)
+            if (elFeed.children.length > 50) {
+                elFeed.removeChild(elFeed.lastChild);
+            }
+        }
+
+        // ==========================================
+        // DATA FETCHING
+        // ==========================================
+        async function fetchHistoricalData() {
+            try {
+                const res = await fetch(`${API_BASE}/api/v1/metrics/totals`);
+                if (res.ok) {
+                    const data = await res.json();
+                    state.impressions = data.impressions || 0;
+                    state.clicks = data.clicks || 0;
+                    state.users = data.unique_users || 0;
+                    updateKPIs();
+                }
+            } catch (err) {
+                console.error("Failed to fetch historical metrics:", err);
+            }
+        }
+
+        // ==========================================
+        // WEBSOCKET LOGIC
+        // ==========================================
+        let ws;
+        function connectWebSocket() {
+            ws = new WebSocket(WS_URL);
+
+            ws.onopen = () => {
+                wsDot.classList.add('online');
+                wsStatus.textContent = 'Live';
+                wsStatus.style.color = 'var(--accent-green)';
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const payload = JSON.parse(event.data);
+                    
+                    if (payload.type === 'INVENTORY_MATCH') {
+                        state.impressions++;
+                        updateKPIs();
+                        appendEvent('IMPRESSION', `Served ${payload.data.count} ads for semantic intent: <strong>"${payload.data.intent}"</strong>`);
+                    } 
+                    else if (payload.type === 'CLICK_CONVERSION') {
+                        state.clicks++;
+                        updateKPIs();
+                        appendEvent('CLICK', `User clicked ad: <strong>${payload.data.ad_id}</strong>`);
+                    }
+                } catch (e) {
+                    console.error("Error parsing WS message:", e);
+                }
+            };
+
+            ws.onclose = () => {
+                wsDot.classList.remove('online');
+                wsStatus.textContent = 'Disconnected - Retrying...';
+                wsStatus.style.color = '#ef4444';
+                // Auto-reconnect after 3 seconds
+                setTimeout(connectWebSocket, 3000);
+            };
+            
+            ws.onerror = (err) => {
+                console.error("WebSocket error observed:", err);
+            };
+        }
+
+        // ==========================================
+        // BOOT SEQUENCE
+        // ==========================================
+        fetchHistoricalData().then(() => {
+            connectWebSocket();
+        });
+
+    </script>
+</body>
+</html>
