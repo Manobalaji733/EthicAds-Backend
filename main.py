@@ -1,131 +1,128 @@
-from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect, HTTPException, Security, status
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, RedirectResponse
-from pydantic import BaseModel
-import json
 import os
+from fastapi import FastAPI, BackgroundTasks, WebSocket, WebSocketDisconnect, Depends, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
-# Import local modules from your project structure
-from config import settings
-from security import verify_api_key
-from services import ad_engine
-from telemetry import telemetry_manager
-from analytics import analytics_store
-
-app = FastAPI(
-    title="EthicAds - Privacy-First Contextual Advertising Engine",
-    version="1.0.0"
-)
+from config import logger, settings
+import security
+import services as svc
+import analytics
+from telemetry import stream
 
 # ==========================================
-# CORS MIDDLEWARE CONFIGURATION
+# APP INITIALIZATION & MIDDLEWARE
 # ==========================================
-# This allows your Chrome Extension running on external web pages 
-# to securely make requests to your Render backend.
+app = FastAPI(title="EthicAds Engine", version="6.0.0")
+
+# Rate Limiting Configuration
+app.state.limiter = security.limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# ==========================================
+# CORS CONFIGURATION (The Fix)
+# ==========================================
 app.add_middleware(
-    CORSMiddleware,
+    CORSMiddleware, 
     allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["*"], 
     allow_headers=["*"],
 )
 
+# Static file mounting
+os.makedirs("static", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info("[MAIN] Booting EthicAds privacy-first ad server...")
+    analytics.initialize_database()
+
 # ==========================================
-# PUNDANTIC SCHEMAS
+# PYDANTIC SCHEMAS
 # ==========================================
 class ContextPayload(BaseModel):
-    raw_viewport_text: str
-    device_id: str
+    raw_viewport_text: str = Field(..., min_length=10, max_length=5000)
+    device_id: str = Field(..., min_length=5, max_length=50)
 
 # ==========================================
-# ROUTES & ENDPOINTS
+# DASHBOARD & METRICS ROUTES
 # ==========================================
-
-@app.get("/", include_in_schema=False)
+@app.get("/")
 async def root_redirect():
-    """Redirect root traffic to the telemetry dashboard."""
     return RedirectResponse(url="/dashboard")
 
-
-@app.get("/dashboard", response_class=HTMLResponse)
-async def get_dashboard():
-    """Serve the central telemetry monitoring interface."""
-    dashboard_path = os.path.join("static", "dashboard.html")
+@app.get("/dashboard")
+async def serve_ops_dashboard():
+    dashboard_path = "static/dashboard.html"
     if not os.path.exists(dashboard_path):
-        raise HTTPException(status_code=404, detail="Dashboard HTML file not found.")
-    
-    with open(dashboard_path, "r", encoding="utf-8") as f:
-        return HTMLResponse(content=f.read())
-
-
-@app.post("/api/v1/workflows/run")
-async def run_contextual_pipeline(
-    payload: ContextPayload, 
-    authenticated: bool = Depends(verify_api_key)
-):
-    """
-    Analyzes page text, matches privacy-safe inventory, logs 
-    the impression, and broadcasts telemetry updates to the dashboard.
-    """
-    if not authenticated:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, 
-            detail="Invalid or missing API Key"
-        )
-    
-    # Process text through the NLP/Matching logic
-    result = await ad_engine.match_inventory(payload.raw_viewport_text, payload.device_id)
-    
-    if result["status"] == "success" and result["ads"]:
-        # Log historical metrics locally
-        analytics_store.log_impression(len(result["ads"]), payload.device_id)
-        
-        # Broadcast real-time update to the dashboard over WebSockets
-        await telemetry_manager.broadcast({
-            "type": "INVENTORY_MATCH",
-            "data": {
-                "intent": result.get("detected_intent", "Unknown"),
-                "count": len(result["ads"])
-            }
-        })
-        
-    return result
-
-
-@app.get("/api/v1/clicks")
-async def handle_click_tracking(ad_id: str, dest: str, device_id: str):
-    """Tracks ad clicks without cookies and routes the user to their destination."""
-    # Log click metrics locally
-    analytics_store.log_click(ad_id, device_id)
-    
-    # Broadcast click event to open WebSocket connections
-    await telemetry_manager.broadcast({
-        "type": "CLICK_CONVERSION",
-        "data": {
-            "ad_id": ad_id
-        }
-    })
-    
-    # Securely redirect user to the target landing page
-    return RedirectResponse(url=dest)
-
+        return {"error": "Dashboard UI not found in the static/ folder. Please place dashboard.html there."}
+    return FileResponse(dashboard_path)
 
 @app.get("/api/v1/metrics/totals")
 async def get_historical_metrics():
-    """Retrieve cumulative performance data for the KPI layout."""
-    return analytics_store.get_summary_stats()
-
-# ==========================================
-# WEBSOCKET CHANNELS
-# ==========================================
+    return analytics.get_all_time_metrics()
 
 @app.websocket("/ws/telemetry")
-async def telemetry_websocket_endpoint(websocket: WebSocket):
-    """Handles persistent live connections from monitoring interfaces."""
-    await telemetry_manager.connect(websocket)
+async def websocket_telemetry_endpoint(websocket: WebSocket):
+    await stream.connect(websocket)
     try:
         while True:
-            # Keep connection alive; look out for incoming client heartbeats
             await websocket.receive_text()
     except WebSocketDisconnect:
-        telemetry_manager.disconnect(websocket)
+        stream.disconnect(websocket)
+
+# ==========================================
+# CORE ADVERTISING WORKFLOWS
+# ==========================================
+@app.post("/api/v1/workflows/run")
+@security.limiter.limit("60/minute")
+async def runtime_pipeline(
+    request: Request,
+    payload: ContextPayload, 
+    background_tasks: BackgroundTasks,
+    api_key: str = Depends(security.get_api_key) # Using the correct function name here
+):
+    logger.info(f"[MAIN] Processing pipeline for device {payload.device_id[:8]}...")
+    
+    # 1. AI Intent Extraction
+    extracted_intent = await svc.extract_semantic_intent(payload.raw_viewport_text)
+    if not extracted_intent or extracted_intent == "general": 
+        return {"status": "success", "ads": []}
+
+    # 2. Amazon Product Retrieval
+    target_ads = await svc.fetch_amazon_inventory(extracted_intent)
+    
+    # 3. Asynchronous Telemetry & Logging
+    if target_ads:
+        background_tasks.add_task(
+            stream.broadcast, 
+            "INVENTORY_MATCH", 
+            {"intent": extracted_intent, "count": len(target_ads)}
+        )
+        background_tasks.add_task(
+            analytics.log_event, 
+            "IMPRESSION", 
+            extracted_intent, 
+            f"{len(target_ads)} items served", 
+            payload.device_id
+        )
+
+    return {"status": "success", "ads": target_ads}
+
+@app.get("/api/v1/clicks")
+@security.limiter.limit("120/minute")
+async def direct_conversion_proxy(
+    request: Request,
+    ad_id: str, 
+    dest: str, 
+    device_id: str, 
+    background_tasks: BackgroundTasks
+):
+    background_tasks.add_task(stream.broadcast, "CLICK_CONVERSION", {"ad_id": ad_id})
+    background_tasks.add_task(analytics.log_event, "CLICK", "User_Interaction", ad_id, device_id)
+    return RedirectResponse(url=dest)
