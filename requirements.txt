@@ -7,3 +7,5 @@ websockets
 httpx
 tenacity
 email-validator
+gspread
+oauth2client
