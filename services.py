@@ -74,21 +74,22 @@ async def _call_groq_api(clean_text: str) -> Dict[str, Any]:
         "messages": [
             {
                 "role": "system", 
-                "content": "You are a contextual advertising analyzer. You must respond strictly in json format."
+                "content": "You are a contextual advertising classifier. You must respond strictly in JSON format."
             },
             {
                 "role": "user", 
                 "content": (
-                    "Analyze the following webpage text. Extract the main topic, intent, "
-                    "and top 3 search keywords for targeted advertising.\n"
-                    "Output strictly as json: {\"topic\": \"str\", \"intent\": \"str\", \"keywords\": [\"str\"]}\n\n"
+                    "Analyze the following webpage text. Determine the single best, broad e-commerce product "
+                    "category for contextual advertising (e.g., 'laptops', 'cameras', 'mens shoes', 'skincare'). "
+                    "Keep it to 1 or 2 words maximum. Do not be overly specific.\n"
+                    "Output strictly as json: {\"broad_category\": \"str\"}\n\n"
                     f"Text: {clean_text}"
                 )
             }
         ],
         "response_format": {"type": "json_object"},
         "temperature": 0.1,
-        "max_tokens": 250
+        "max_tokens": 150
     }
     
     async with httpx.AsyncClient() as client:
@@ -101,7 +102,7 @@ async def _call_groq_api(clean_text: str) -> Dict[str, Any]:
         return resp.json()
 
 async def extract_semantic_intent(raw_text: str) -> str:
-    """Extracts intent and keywords using Groq with strict JSON output recovery."""
+    """Extracts a broad category using Groq with strict JSON output recovery."""
     clean_text = sanitize_text(raw_text)
     if not clean_text:
         logger.warning("[SERVICES] Empty text provided after sanitization.")
@@ -128,16 +129,13 @@ async def extract_semantic_intent(raw_text: str) -> str:
             else:
                 raise ValueError("Valid JSON structure not found in Groq response.")
 
-        keywords = parsed.get("keywords", [])
-        intent = parsed.get("intent", "")
-        topic = parsed.get("topic", "")
-        
-        search_query = " ".join(keywords[:2]) if keywords else f"{topic} {intent}".strip()
+        # Extract the broad category, fallback to 'general' if missing
+        search_query = parsed.get("broad_category", "").strip().lower()
         if not search_query:
             search_query = "general"
             
         _CACHE.set(cache_prefix, search_query, ttl=3600)
-        logger.info(f"[SERVICES] Extracted intent query: '{search_query}'")
+        logger.info(f"[SERVICES] Extracted broad intent query: '{search_query}'")
         return search_query
 
     except Exception as e:
@@ -159,8 +157,9 @@ async def _call_rapidapi(intent: str) -> Dict[str, Any]:
         "X-RapidAPI-Key": settings.RAPIDAPI_KEY,
         "X-RapidAPI-Host": settings.RAPIDAPI_HOST
     }
+    # Append 'eco friendly' to ensure sustainable ads are returned
     params = {
-        "query": intent,
+        "query": f"eco friendly {intent}",
         "country": "US",
         "category_id": "aps"
     }
@@ -191,11 +190,12 @@ async def fetch_amazon_inventory(intent: str) -> List[Dict[str, str]]:
         for p in products[:3]:
             if not p.get("asin"): 
                 continue
+            # FIXED: 'id' and 'url' keys now exactly match what the extension frontend expects
             normalized_products.append({
-                "ad_id": p.get("asin"),
+                "id": p.get("asin"),
                 "title": p.get("product_title", "Amazon Product"),
                 "price": p.get("product_price", "Check Price"),
-                "dest": p.get("product_url", "#"),
+                "url": p.get("product_url", "#"),
                 "image": p.get("product_photo", "")
             })
 
