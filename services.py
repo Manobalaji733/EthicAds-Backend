@@ -69,7 +69,6 @@ async def _call_groq_api(clean_text: str) -> Dict[str, Any]:
     }
     
     payload = {
-        # Using Llama 3.1 8B for highly optimized, low-latency JSON structured outputs
         "model": "llama-3.1-8b-instant", 
         "messages": [
             {
@@ -129,7 +128,6 @@ async def extract_semantic_intent(raw_text: str) -> str:
             else:
                 raise ValueError("Valid JSON structure not found in Groq response.")
 
-        # Extract the broad category, fallback to 'general' if missing
         search_query = parsed.get("broad_category", "").strip().lower()
         if not search_query:
             search_query = "general"
@@ -143,11 +141,38 @@ async def extract_semantic_intent(raw_text: str) -> str:
         return "general"
 
 # ==========================================
+# REAL WORLD FALLBACK INVENTORY
+# ==========================================
+FALLBACK_INVENTORY = {
+    "cameras": [{
+        "id": "B0892B3ZRM", 
+        "title": "Renewed: Sony Alpha a7 III Mirrorless Camera", 
+        "price": "$1,398.00", 
+        "url": "https://www.amazon.com/dp/B0892B3ZRM",
+        "image": ""
+    }],
+    "laptops": [{
+        "id": "B08N5LNQCX", 
+        "title": "Renewed Premium: Apple MacBook Air M1", 
+        "price": "$749.00", 
+        "url": "https://www.amazon.com/dp/B08N5LNQCX",
+        "image": ""
+    }],
+    "general": [{
+        "id": "B07Z12YTRJ", 
+        "title": "Bite Natural Toothpaste Bits (Eco-Friendly)", 
+        "price": "$32.00", 
+        "url": "https://www.amazon.com/dp/B07Z12YTRJ",
+        "image": ""
+    }]
+}
+
+# ==========================================
 # AMAZON RAPIDAPI ENGINE
 # ==========================================
 @retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1.5, min=2, max=12),
+    stop=stop_after_attempt(2),
+    wait=wait_exponential(multiplier=1, min=1, max=3),
     retry=retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError)),
     reraise=True
 )
@@ -157,7 +182,6 @@ async def _call_rapidapi(intent: str) -> Dict[str, Any]:
         "X-RapidAPI-Key": settings.RAPIDAPI_KEY,
         "X-RapidAPI-Host": settings.RAPIDAPI_HOST
     }
-    # Append 'eco friendly' to ensure sustainable ads are returned
     params = {
         "query": f"eco friendly {intent}",
         "country": "US",
@@ -165,21 +189,20 @@ async def _call_rapidapi(intent: str) -> Dict[str, Any]:
     }
 
     async with httpx.AsyncClient() as client:
-        resp = await client.get(url, headers=headers, params=params, timeout=12.0)
+        resp = await client.get(url, headers=headers, params=params, timeout=8.0)
         if resp.status_code == 429:
-            logger.warning("[SERVICES] RapidAPI rate limit exceeded. Tenacity will retry.")
+            logger.warning("[SERVICES] RapidAPI rate limit hit. Falling back to local real inventory.")
         resp.raise_for_status()
         return resp.json()
 
 async def fetch_amazon_inventory(intent: str) -> List[Dict[str, str]]:
-    """Fetches, ranks, and normalizes real Amazon products via RapidAPI."""
-    if not intent or intent == "general":
-        return []
+    """Fetches real Amazon products via RapidAPI, with a bulletproof fallback."""
+    if not intent or intent in ["general", "none", "null"]:
+        return FALLBACK_INVENTORY["general"]
 
     cache_prefix = f"amazon_{intent}"
     cached_inventory = _CACHE.get(cache_prefix)
     if cached_inventory:
-        logger.info(f"[SERVICES] Cache hit for Amazon inventory matching: '{intent}'")
         return cached_inventory
 
     try:
@@ -188,9 +211,7 @@ async def fetch_amazon_inventory(intent: str) -> List[Dict[str, str]]:
         
         normalized_products = []
         for p in products[:3]:
-            if not p.get("asin"): 
-                continue
-            # FIXED: 'id' and 'url' keys now exactly match what the extension frontend expects
+            if not p.get("asin"): continue
             normalized_products.append({
                 "id": p.get("asin"),
                 "title": p.get("product_title", "Amazon Product"),
@@ -199,10 +220,12 @@ async def fetch_amazon_inventory(intent: str) -> List[Dict[str, str]]:
                 "image": p.get("product_photo", "")
             })
 
-        _CACHE.set(cache_prefix, normalized_products, ttl=1800)
-        logger.info(f"[SERVICES] Successfully retrieved {len(normalized_products)} products for '{intent}'")
-        return normalized_products
-
+        if normalized_products:
+            _CACHE.set(cache_prefix, normalized_products, ttl=1800)
+            return normalized_products
+            
     except Exception as e:
-        logger.error(f"[SERVICES] Amazon Product API failed: {str(e)}")
-        return []
+        logger.error(f"[SERVICES] Amazon API Failed ({str(e)}). Engaging Real Fallback.")
+        
+    fallback = FALLBACK_INVENTORY.get(intent, FALLBACK_INVENTORY["general"])
+    return fallback
