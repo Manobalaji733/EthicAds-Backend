@@ -47,6 +47,12 @@ class ContextPayload(BaseModel):
     raw_viewport_text: str = Field(..., min_length=10, max_length=5000)
     device_id: str = Field(..., min_length=5, max_length=50)
 
+class TelemetryPayload(BaseModel):
+    event_type: str
+    category: str
+    target: str
+    device_id: str
+
 # ==========================================
 # ROUTES
 # ==========================================
@@ -71,13 +77,33 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         stream.disconnect(websocket)
 
+@app.post("/analytics/log")
+async def log_telemetry_event(
+    payload: TelemetryPayload, 
+    background_tasks: BackgroundTasks
+):
+    """Receives telemetry from the Chrome Extension and logs it to Google Sheets."""
+    background_tasks.add_task(
+        analytics.log_event, 
+        payload.event_type, 
+        payload.category, 
+        payload.target, 
+        payload.device_id
+    )
+    background_tasks.add_task(
+        stream.broadcast, 
+        "TELEMETRY_LOGGED", 
+        {"type": payload.event_type, "category": payload.category}
+    )
+    return {"status": "success", "message": "Event logged"}
+
 @app.post("/api/v1/workflows/run")
 @security.limiter.limit("60/minute")
 async def runtime_pipeline(
     request: Request,
     payload: ContextPayload, 
-    background_tasks: BackgroundTasks,
-    api_key: str = Depends(security.get_api_key) # Matches your security.py exactly
+    background_tasks: BackgroundTasks
+    # api_key: str = Depends(security.get_api_key) # <-- COMMENTED OUT FOR EMERGENCY OVERRIDE
 ):
     extracted_intent = await svc.extract_semantic_intent(payload.raw_viewport_text)
     if not extracted_intent or extracted_intent == "general": 
