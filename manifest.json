@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "EthicAds - Privacy First Engine",
+  "version": "1.0.0",
+  "description": "Contextual advertising engine that respects user privacy.",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://ethicads-backend.onrender.com/*",
+    "<all_urls>"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
