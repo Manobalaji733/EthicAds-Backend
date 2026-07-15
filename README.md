@@ -23,6 +23,10 @@ EthicAds is a privacy-safe, context-aware advertising alternative built for the 
 *   **Data Aggregation:** RapidAPI (Real-Time Amazon Product Data Engine)
 *   **Resiliency & Security:** `Tenacity` (smart exponential retry back-offs) & `SlowAPI` (token-bucket rate limiting).
 *   **Cloud Hosting:** Render (Automated Continuous Integration/Continuous Deployment from GitHub).
+*   # EthicAds Engine 🌱
+**Privacy-First Contextual Advertising Engine**
+
+[![Live API Docs](https://img.shields.io/badge/Live_API_Docs-Hosted_on_Render-2ea44f?style=for-the-badge)](https://ethicads-backend.onrender.com/docs)
 
 ---
 
