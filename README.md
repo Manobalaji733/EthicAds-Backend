@@ -27,6 +27,7 @@ EthicAds is a privacy-safe, context-aware advertising alternative built for the 
 ---
 
 ##  Project Architecture
+![EthicAds Backend Pipeline](architecture-flow.png)
 
 ```text
 ├── backend/
