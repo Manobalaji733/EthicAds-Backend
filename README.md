@@ -1,11 +1,11 @@
-# EthicAds Engine 🌱
+# EthicAds Engine 
 **Privacy-First Contextual Advertising Engine**
 
 EthicAds is a privacy-safe, context-aware advertising alternative built for the modern web. Instead of tracking users across the internet with intrusive cookies and capturing personal identifiers, EthicAds relies entirely on the **immediate semantic context** of the active browser viewport. By matching webpage intent directly with sustainable product alternatives in real time, EthicAds aligns monetization with corporate sustainability and absolute user privacy.
 
 ---
 
-## 🚀 Key Features
+##  Key Features
 
 *   **Zero-Tracking Privacy:** Operates with absolute anonymity—no third-party tracking cookies, no cross-site profiling, and zero storage of behavioral history.
 *   **Groq AI Intent Extraction:** Leverages `llama-3.1-8b-instant` via the Groq API to evaluate webpage text dynamically and classify content into broad, clean e-commerce intent categories within milliseconds.
@@ -15,7 +15,7 @@ EthicAds is a privacy-safe, context-aware advertising alternative built for the 
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 *   **Frontend:** Vanilla JavaScript (Chrome Extension Architecture), HTML5, Tailwind-inspired inline CSS with frosted-glass filter effects.
 *   **Backend Framework:** FastAPI (Asynchronous Python 3.11+)
@@ -26,7 +26,7 @@ EthicAds is a privacy-safe, context-aware advertising alternative built for the 
 
 ---
 
-## 📂 Project Architecture
+##  Project Architecture
 
 ```text
 ├── backend/
@@ -76,5 +76,6 @@ Context Scraping: The content.js script safe-scrapes the text inside the user's 
 Semantic Classification: The backend coordinates with the Groq intelligence layer to reduce raw web text down to a highly relevant, 1-to-2 word broad product segment.
 
 Inventory Querying: The intent query passes through a thread-safe SemanticCache. If it's a new intent, it hits the live Amazon Product search framework to gather 3 matching sustainable items; otherwise, it returns the cached entries instantly.
+<img width="1010" height="347" alt="image" src="https://github.com/user-attachments/assets/39c46a8b-1bb6-47b4-b003-5376db7afb2a" />
 
 Interactive Rendering: The extension receives the product matches and injects a glassmorphic layout. The user retains absolute control to hide the widget down into a floating action button or open it back up at will.
